@@ -1,7 +1,12 @@
 [project]
 name = "rag-oc"
 version = "0.1.0"
-description = "Add your description here"
+description = "Collecte et préparation d'événements OpenAgenda pour un futur pipeline RAG."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "faiss-cpu>=1.14.3",
+    "mistralai>=1.9.11",
+    "numpy>=2.5.0",
+    "tqdm>=4.67.1",
+]
