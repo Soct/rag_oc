@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presentation du projet RAG OpenAgenda</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --bg-alt: #fffaf2;
+      --panel: rgba(255, 250, 242, 0.88);
+      --panel-strong: #fffdf8;
+      --text: #1f1b16;
+      --muted: #62584d;
+      --line: rgba(86, 63, 38, 0.16);
+      --accent: #b74f2a;
+      --accent-deep: #7f2f16;
+      --accent-soft: #f3c7ad;
+      --success: #235f45;
+      --shadow: 0 24px 60px rgba(68, 39, 14, 0.12);
+      --radius: 24px;
+      --radius-sm: 16px;
+      --max-width: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(183, 79, 42, 0.18), transparent 26%),
+        radial-gradient(circle at 85% 15%, rgba(35, 95, 69, 0.12), transparent 18%),
+        linear-gradient(180deg, #f8f2ea 0%, #f4efe7 45%, #efe7dc 100%);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      width: min(var(--max-width), calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 36px;
+      padding: 44px;
+      background:
+        linear-gradient(135deg, rgba(255, 253, 248, 0.96), rgba(250, 243, 233, 0.9)),
+        var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -120px -120px auto;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(183, 79, 42, 0.18), transparent 70%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(183, 79, 42, 0.1);
+      color: var(--accent-deep);
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.05;
+    }
+
+    h1 {
+      margin-top: 18px;
+      font-size: clamp(2.8rem, 7vw, 5.8rem);
+      max-width: 11ch;
+    }
+
+    .hero-copy {
+      max-width: 680px;
+      margin-top: 20px;
+      font-size: 1.08rem;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.7fr 1fr;
+      gap: 28px;
+      align-items: end;
+      margin-top: 28px;
+    }
+
+    .stats,
+    .card,
+    .timeline,
+    .code-panel,
+    .footer-box {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      padding: 18px;
+    }
+
+    .stat {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.58);
+      border: 1px solid rgba(86, 63, 38, 0.1);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 2rem;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--accent-deep);
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .hero-panel {
+      padding: 24px;
+      background: linear-gradient(180deg, rgba(183, 79, 42, 0.09), rgba(255, 255, 255, 0.72));
+    }
+
+    .hero-panel h2 {
+      font-size: 1.5rem;
+      margin-bottom: 14px;
+    }
+
+    .stack-list,
+    .bullet-list,
+    .scenario-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .stack-list li,
+    .bullet-list li,
+    .scenario-list li {
+      position: relative;
+      padding-left: 18px;
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .stack-list li::before,
+    .bullet-list li::before,
+    .scenario-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.72em;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .section {
+      margin-top: 28px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+
+    .section-header h2 {
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+    }
+
+    .section-header p {
+      max-width: 540px;
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+    }
+
+    .card {
+      padding: 24px;
+    }
+
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+
+    .card h3 {
+      font-size: 1.45rem;
+      margin-bottom: 14px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(35, 95, 69, 0.08);
+      border: 1px solid rgba(35, 95, 69, 0.14);
+      color: var(--success);
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    .timeline {
+      padding: 24px;
+    }
+
+    .timeline ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    .timeline li {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .step {
+      display: grid;
+      place-items: center;
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, var(--accent), var(--accent-deep));
+      color: #fff9f3;
+      font-weight: 700;
+      box-shadow: 0 12px 24px rgba(127, 47, 22, 0.22);
+    }
+
+    .timeline strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 1.02rem;
+    }
+
+    .timeline p,
+    .card p,
+    .footer-box p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .code-panel {
+      overflow: hidden;
+    }
+
+    .code-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(31, 27, 22, 0.92);
+      color: #f4efe7;
+      font-weight: 600;
+    }
+
+    pre {
+      margin: 0;
+      padding: 22px;
+      overflow-x: auto;
+      background: #1f1b16;
+      color: #f7f0e6;
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    .endpoint {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .method {
+      min-width: 64px;
+      text-align: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      color: white;
+      background: var(--accent-deep);
+    }
+
+    .route {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+
+    .scenario-list li span {
+      display: block;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .footer-box {
+      margin-top: 28px;
+      padding: 24px;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .footer-box strong {
+      display: block;
+      font-size: 1.2rem;
+      margin-bottom: 6px;
+    }
+
+    .mini-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(183, 79, 42, 0.1);
+      color: var(--accent-deep);
+      font-weight: 700;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .section-header,
+      .footer-box {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .span-4,
+      .span-5,
+      .span-6,
+      .span-7,
+      .span-8 {
+        grid-column: span 12;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(var(--max-width), calc(100% - 20px));
+        padding-top: 14px;
+      }
+
+      .hero,
+      .card,
+      .timeline,
+      .footer-box {
+        padding: 20px;
+      }
+
+      h1 {
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Projet Python • FastAPI • RAG local</div>
+      <h1>RAG OpenAgenda pour recommander des evenements</h1>
+      <p class="hero-copy">
+        Ce projet construit un moteur de recherche semantique sur des evenements OpenAgenda en Ile-de-France.
+        Il collecte les donnees, fabrique un index FAISS, interroge Mistral pour les embeddings et la generation,
+        puis expose le tout via une API FastAPI testable en local ou dans Docker.
+      </p>
+
+      <div class="hero-grid">
+        <div class="stats">
+          <div class="stat">
+            <strong>3</strong>
+            <span>Endpoints principaux exposes par l'API : <code>/health</code>, <code>/ask</code>, <code>/rebuild</code>.</span>
+          </div>
+          <div class="stat">
+            <strong>4</strong>
+            <span>Briques majeures : collecte, indexation, service RAG, exposition HTTP.</span>
+          </div>
+          <div class="stat">
+            <strong>100%</strong>
+            <span>Flux local et reproductible avec <code>uv</code>, <code>Docker</code> et une documentation Swagger prete pour la demo.</span>
+          </div>
+        </div>
+
+        <aside class="hero-panel card">
+          <h2>Stack technique</h2>
+          <ul class="stack-list">
+            <li><strong>OpenAgenda</strong> pour la source evenementielle.</li>
+            <li><strong>FAISS</strong> pour l'index vectoriel et le retrieval.</li>
+            <li><strong>Mistral</strong> pour les embeddings et la reponse finale.</li>
+            <li><strong>FastAPI</strong> pour l'API REST et la documentation interactive.</li>
+            <li><strong>uv</strong> pour l'environnement Python et l'image Docker.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Objectif et promesse</h2>
+        <p>Transformer une base d'evenements volumineuse et heterogene en experience de question-reponse exploitable pour une demo technique claire.</p>
+      </div>
+      <div class="grid">
+        <article class="card span-4">
+          <h3>Probleme</h3>
+          <p>Une recherche classique par mots-cles ne suffit pas quand les descriptions sont longues, variees et parfois mal structurees.</p>
+        </article>
+        <article class="card span-4">
+          <h3>Solution</h3>
+          <p>Le projet convertit les textes en embeddings, retrouve les passages pertinents, reconstruit un contexte, puis genere une reponse naturelle.</p>
+        </article>
+        <article class="card span-4">
+          <h3>Resultat</h3>
+          <p>Une API capable de repondre a des questions comme <em>atelier a Paris ce week-end</em> ou <em>sortie famille prochainement</em>.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Pipeline du projet</h2>
+        <p>Le repo est organise comme un enchainement simple et lisible : ingestion, preparation, indexation, interrogation.</p>
+      </div>
+      <div class="timeline">
+        <ol>
+          <li>
+            <div class="step">01</div>
+            <div>
+              <strong>Collecte OpenAgenda</strong>
+              <p><code>scripts/fetch_openagenda_events.py</code> appelle l'API OpenAgenda, filtre la zone cible, normalise les champs utiles et ecrit un fichier JSONL ou JSONL.gz.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step">02</div>
+            <div>
+              <strong>Construction du corpus</strong>
+              <p>Le champ <code>document</code> devient la base du chunking. Le manifeste de collecte garde aussi la fenetre temporelle et les informations de run.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step">03</div>
+            <div>
+              <strong>Embeddings et FAISS</strong>
+              <p><code>scripts/build_faiss_index.py</code> decoupe le texte, appelle Mistral pour les embeddings et produit <code>data/faiss/openagenda.index</code> avec sa metadata associee.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step">04</div>
+            <div>
+              <strong>Question-reponse RAG</strong>
+              <p><code>src/rag_oc/rag_service.py</code> cherche les chunks proches, filtre les evenements passes, reconstruit le contexte et demande au modele de chat la reponse finale.</p>
+            </div>
+          </li>
+          <li>
+            <div class="step">05</div>
+            <div>
+              <strong>Exposition API</strong>
+              <p><code>src/rag_oc/api.py</code> sert le moteur via FastAPI avec Swagger et des scenarios de test preconfigures dans l'interface.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Architecture et execution</h2>
+        <p>Le projet reste volontairement compact. La logique est separee entre scripts, service RAG et couche HTTP.</p>
+      </div>
+      <div class="grid">
+        <article class="card span-5">
+          <h3>Fichiers clefs</h3>
+          <ul class="bullet-list">
+            <li><code>scripts/fetch_openagenda_events.py</code> : ingestion OpenAgenda.</li>
+            <li><code>scripts/build_faiss_index.py</code> : chunking, embeddings, index FAISS.</li>
+            <li><code>src/rag_oc/rag_service.py</code> : coeur metier du retrieval et de la generation.</li>
+            <li><code>src/rag_oc/api.py</code> : endpoints FastAPI et scenarios OpenAPI.</li>
+            <li><code>scripts/evaluate_rag.py</code> : base d'evaluation automatique avec Ragas.</li>
+          </ul>
+          <div class="pill-row">
+            <span class="pill">Python 3.13+</span>
+            <span class="pill">uv</span>
+            <span class="pill">Docker</span>
+            <span class="pill">FastAPI</span>
+          </div>
+        </article>
+
+        <article class="card span-7">
+          <h3>Flux de lancement</h3>
+          <div class="code-panel">
+            <div class="code-title">
+              <span>Commandes principales</span>
+              <span>CLI locale</span>
+            </div>
+            <pre><code>uv run python scripts/fetch_openagenda_events.py --help
+uv run python scripts/build_faiss_index.py --help
+uv run python scripts/chat_openagenda.py --help
+uv run uvicorn rag_oc.api:app --reload</code></pre>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>API et scenarios de demo</h2>
+        <p>L'API est pensee pour une demonstration rapide : des endpoints simples, Swagger sur <code>/docs</code> et des exemples directement rejouables.</p>
+      </div>
+      <div class="grid">
+        <article class="card span-6">
+          <h3>Endpoints</h3>
+          <div class="endpoint"><span class="method">GET</span><span class="route">/health</span></div>
+          <div class="endpoint"><span class="method">POST</span><span class="route">/ask</span></div>
+          <div class="endpoint"><span class="method">POST</span><span class="route">/rebuild</span></div>
+          <p style="margin-top: 18px;">
+            L'endpoint <code>/ask</code> renvoie une reponse, les sources retenues et le contexte assemble.
+            L'endpoint <code>/rebuild</code> relance la construction de l'index puis recharge le service si necessaire.
+          </p>
+        </article>
+
+        <article class="card span-6">
+          <h3>Scenarios de test</h3>
+          <ul class="scenario-list">
+            <li>
+              <span>Atelier a Paris ce week-end</span>
+              Valide la recherche semantique sur une activite creative a horizon court.
+            </li>
+            <li>
+              <span>Evenements famille prochainement</span>
+              Verifie la restitution d'options plus larges avec un contexte plus riche.
+            </li>
+            <li>
+              <span>Exposition gratuite en Ile-de-France</span>
+              Teste la capacite a combiner sujet, cout et localisation.
+            </li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Evaluation, limites, suites</h2>
+        <p>Le projet dispose deja d'une base de tests et d'un squelette pour l'evaluation automatique, mais il reste de la marge pour l'industrialisation.</p>
+      </div>
+      <div class="grid">
+        <article class="card span-4">
+          <h3>Ce qui est deja couvert</h3>
+          <ul class="bullet-list">
+            <li>Tests unitaires sur la collecte, l'indexation, le service RAG et le contrat API.</li>
+            <li>Script <code>scripts/evaluate_rag.py</code> prevu pour brancher Ragas et comparer les reponses.</li>
+            <li>Verification locale via API et Swagger.</li>
+          </ul>
+        </article>
+        <article class="card span-4">
+          <h3>Limites actuelles</h3>
+          <ul class="bullet-list">
+            <li>Dependance a Mistral pour les embeddings et la generation.</li>
+            <li>Temps de rebuild d'index potentiellement significatif.</li>
+            <li>Qualite sensible a la qualite des donnees source et au retrieval.</li>
+          </ul>
+        </article>
+        <article class="card span-4">
+          <h3>Pistes d'evolution</h3>
+          <ul class="bullet-list">
+            <li>Reranking des resultats.</li>
+            <li>Filtres metier explicites par date, lieu et categorie.</li>
+            <li>Durcissement de <code>/rebuild</code> et deploiement plus industrialise.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="footer-box">
+      <div>
+        <strong>Resume</strong>
+        <p>Un POC RAG local, proprement structure, demonstrable vite, et deja suffisamment outille pour servir de base a une evolution produit.</p>
+      </div>
+      <div class="mini-tag">OpenAgenda → FAISS → Mistral → FastAPI</div>
+    </section>
+  </main>
+</body>
+</html>
