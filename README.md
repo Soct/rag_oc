@@ -1,297 +1,446 @@
-# Collecte OpenAgenda pour futur RAG
+# Collecte OpenAgenda et API RAG
 
-Ce depot contient deux scripts simples :
+Ce depot contient un pipeline RAG simple autour d'OpenAgenda, FAISS et Mistral :
 
-- `scripts/fetch_openagenda_events.py` pour collecter les evenements OpenAgenda en Ile-de-France ;
-- `scripts/build_faiss_index.py` pour transformer le `JSONL` en index FAISS avec les embeddings Mistral.
+- `Dockerfile` et `docker-compose.yml` pour executer l'API localement dans un conteneur ;
+- l'image Docker installe les dependances via `uv` a partir de `pyproject.toml` et `uv.lock` ;
+- `scripts/fetch_openagenda_events.py` collecte et normalise les evenements OpenAgenda ;
+- `scripts/build_faiss_index.py` est le point d'entree CLI pour construire l'index FAISS ;
+- `src/rag_oc/build_faiss_index.py` porte la logique d'indexation reutilisee par l'API ;
+- `src/rag_oc/rag_service.py` centralise la logique metier RAG ;
+- `scripts/chat_openagenda.py` permet de tester le RAG en CLI ;
+- `scripts/evaluate_rag.py` sert de base pour l'evaluation automatique ;
+- `scripts/api_smoke_test.py` permet de verifier rapidement le contrat HTTP ;
+- `src/rag_oc/api.py` expose le RAG en API REST FastAPI.
 
 ## Objectif
 
-Le script :
+Le projet sert a :
 
-- parcourt les agendas OpenAgenda publiés ;
-- récupère les événements localisés en `Île-de-France` ;
-- applique une fenêtre de dates configurable ;
-- force une borne basse à `aujourd'hui - 365 jours` pour exclure les événements trop anciens ;
-- permet de filtrer les mots-cles d'evenement ;
-- exclut par defaut les evenements ayant le mot-cle `concert` ;
-- produit un fichier `JSONL` normalisé, plus pratique qu'un CSV pour un pipeline RAG.
-- utilise un format compact, centre sur le RAG, pour eviter des fichiers de plusieurs centaines de Mo.
+- collecter des evenements OpenAgenda en `Île-de-France` ;
+- produire un dataset `JSONL` adapte au retrieval ;
+- transformer les textes en embeddings Mistral ;
+- indexer ces embeddings dans FAISS ;
+- repondre a une question utilisateur avec un flux RAG ;
+- exposer ce systeme localement via HTTP.
 
-## Pourquoi du JSONL
+## Architecture
 
-Le fichier de sortie contient une ligne JSON par événement.
-
-Ce format est adapté au RAG parce qu'il permet de conserver à la fois :
-
-- un texte prêt à indexer dans `document` ;
-- des métadonnées structurées comme `title`, `timings`, `location`, `event_types`, `source_agendas`.
-
-Un futur script de vectorisation pourra donc :
-
-1. lire chaque ligne ;
-2. utiliser `document` comme contenu principal ;
-3. garder les métadonnées pour le filtrage, la citation des sources et le reranking.
-
-Le script ne conserve pas tous les champs OpenAgenda bruts. Il garde seulement les donnees utiles au retrieval et a la restitution, ce qui reduit fortement la taille du dataset.
+```text
+OpenAgenda API
+    -> fetch_openagenda_events.py
+    -> data/openagenda/*.jsonl(.gz)
+    -> scripts/build_faiss_index.py
+    -> data/faiss/openagenda.index
+    -> data/faiss/openagenda_metadata.pkl
+    -> src/rag_oc/build_faiss_index.py
+    -> src/rag_oc/rag_service.py
+    -> chat_openagenda.py / src/rag_oc/api.py
+```
 
 ## Structure
 
 ```text
 .
+├── Dockerfile
+├── docker-compose.yml
 ├── main.py
 ├── pyproject.toml
 ├── README.md
+├── src/
+│   └── rag_oc/
+│       ├── __init__.py
+│       ├── api.py
+│       ├── build_faiss_index.py
+│       └── rag_service.py
+├── docs/
+│   ├── MISTRAL.md
+│   ├── PRESENTATION.md
+│   └── project_presentation.html
 ├── scripts/
+│   ├── api_smoke_test.py
 │   ├── build_faiss_index.py
-│   └── fetch_openagenda_events.py
+│   ├── chat_openagenda.py
+│   ├── evaluate_rag.py
+│   ├── fetch_openagenda_events.py
+│   └── __init__.py
 └── tests/
-    └── test_openagenda.py
+    ├── rag_eval_sample.jsonl
+    ├── test_api.py
+    ├── test_build_faiss_index.py
+    ├── test_evaluate_rag.py
+    ├── test_openagenda.py
+    └── test_rag_service.py
 ```
 
-## Pré-requis
+## Pre-requis
 
 - Python `>= 3.13`
 - `uv`
-- une clé API publique OpenAgenda
+- une cle API OpenAgenda
+- une cle API Mistral
 
-La documentation officielle OpenAgenda confirme que la lecture API se fait avec une clé publique passée dans l'en-tête `key`. Le script tente d'abord la lecture transverse via `/v2/events`, puis bascule automatiquement sur `/v2/agendas/{agendaUID}/events` si cette route n'est pas disponible pour ton compte.
+Les cles peuvent etre passees :
 
-Sources :
+- via les options CLI ;
+- via des variables d'environnement ;
+- via un fichier `.env`.
 
-- https://developers.openagenda.com/authentification/
-- https://developers.openagenda.com/evenements/lecture/
-- https://developers.openagenda.com/agendas/recherche/
+## 1. Collecte OpenAgenda
 
-## Lancement
+Le script [scripts/fetch_openagenda_events.py](/home/zmxw1768/Documents/rag_oc/scripts/fetch_openagenda_events.py:1) :
 
-La configuration principale est directement dans [scripts/fetch_openagenda_events.py](/home/zmxw1768/Documents/rag_oc/scripts/fetch_openagenda_events.py:14), dans le bloc `DEFAULT_CONFIG`.
+- appelle l'API OpenAgenda ;
+- filtre les evenements par region ;
+- applique une fenetre de dates ;
+- normalise les champs utiles pour le RAG ;
+- ecrit un `jsonl` ou `jsonl.gz`.
 
-Par defaut :
-
-- `region` vaut `Ile-de-France` ;
-- `excluded_event_types` vaut `["concert"]` ;
-- `included_event_types` est vide, donc on ne limite pas la collecte a un seul type.
-
-Exemple simple :
+Commande simple :
 
 ```bash
 uv run python scripts/fetch_openagenda_events.py \
   --api-key "VOTRE_CLE_OPENAGENDA"
 ```
 
-Exemple avec filtres :
+Exemple avec options :
 
 ```bash
 uv run python scripts/fetch_openagenda_events.py \
   --api-key "VOTRE_CLE_OPENAGENDA" \
-  --event-type concert \
-  --event-type jazz \
-  --date-from "2026-01-01T00:00:00+00:00" \
-  --date-to "2026-12-31T23:59:59+00:00" \
-  --output data/openagenda/concerts_idf.jsonl
-```
-
-## Options utiles
-
-```bash
-uv run python scripts/fetch_openagenda_events.py --help
-```
-
-Principales options :
-
-- `--api-key` : clé publique OpenAgenda ;
-- `--event-type` : inclut seulement certains mots-cles via `keyword[]` ;
-- `--exclude-event-type` : exclut localement certains mots-cles, par defaut `concert` ;
-- `--search` : filtre texte complémentaire ;
-- `--date-from` : début de période ;
-- `--date-to` : fin de période ;
-- `--region` : région ciblée, par défaut `Île-de-France` ;
-- `--official-only` : limite la collecte aux agendas officiels ;
-- `--max-agendas` : borne de sécurité pour les gros runs ;
-- `--pause-seconds` : pause entre deux agendas si nécessaire ;
-- `--source-mode` : `auto`, `transverse` ou `agendas` ;
-- `--workers` : nombre de requêtes agendas parallèles en mode `agendas` ;
-- `--output` : chemin du fichier JSONL ;
-- `--manifest-output` : chemin du manifeste JSON.
-
-Si `--output` finit par `.gz`, le script ecrit directement un `JSONL` compresse.
-
-## Strategie de collecte
-
-Le script propose trois modes :
-
-- `auto` : tente `/v2/events`, puis fallback sur la collecte agenda par agenda ;
-- `transverse` : force `/v2/events` ;
-- `agendas` : force `/v2/agendas/{agendaUID}/events`.
-
-La route transverse est la plus interessante en performance, mais la documentation OpenAgenda precise qu'elle est experimentale et qu'il faut parfois contacter le support pour y avoir acces.
-
-Quand le script tombe en mode `agendas`, tu peux accelerer la collecte avec `--workers`.
-
-Exemple :
-
-```bash
-uv run python scripts/fetch_openagenda_events.py \
-  --output data/openagenda/test.jsonl \
   --source-mode agendas \
-  --official-only \
-  --workers 12
+  --workers 12 \
+  --output data/openagenda/full.jsonl.gz
 ```
 
-## Règle sur la date
+### Regle temporelle de collecte
 
-Même si `--date-from` est fourni, le script n'accepte jamais une date de début antérieure à `maintenant - 365 jours`.
+Le script borne toujours `date_from` a `maintenant - 365 jours`.
 
-Exemple :
+Important :
 
-- date du jour du run : `2026-07-02`
-- `--date-from 2024-01-01T00:00:00+00:00`
-- date réellement utilisée : `2025-07-02` plus l'heure courante UTC du lancement
+- cela ne veut pas dire "evenements futurs uniquement" ;
+- cela veut dire "evenements presents dans les 365 derniers jours" ;
+- un evenement de juillet 2025 peut donc encore etre dans le dataset en juillet 2026 si le run a ete fait dans cette fenetre.
 
-Cette règle garantit que le dataset ne contient pas d'événements vieux de plus d'un an.
+Le filtrage des evenements deja termines se fait ensuite dans le moteur RAG au moment de la recherche.
 
-## Que mettre dans `event-type`
+### Format de sortie
 
-OpenAgenda n'expose pas ici une taxonomie fermee universelle du type "event_type" strict. Dans ce script, `event-type` correspond aux `keywords` retournes par les evenements OpenAgenda.
+Chaque ligne contient notamment :
 
-Concretement, tu peux mettre des valeurs comme :
+- `id`
+- `event_uid`
+- `title`
+- `description`
+- `long_description`
+- `event_types`
+- `date_summary`
+- `timings`
+- `first_timing`
+- `last_timing`
+- `location`
+- `source_agendas`
+- `document`
 
-- `exposition`
-- `conference`
-- `atelier`
-- `festival`
-- `theatre`
-- `cinema`
-- `visite`
-- `patrimoine`
-- `jeunesse`
+Le champ `document` est le texte principal utilise pour le chunking et la vectorisation.
 
-Point important :
+Le script genere aussi un manifeste `*.manifest.json` avec :
 
-- ces valeurs dependent des mots-cles reellement saisis dans les agendas ;
-- ce n'est pas une liste garantie globale ;
-- `concert` peut apparaitre seul ou avec d'autres mots-cles comme `jazz`, `musique`, `live`.
+- la date du run ;
+- la fenetre de dates ;
+- le mode de collecte ;
+- le nombre d'agendas scannes ;
+- le nombre d'evenements ecrits.
 
-Si tu ne veux pas les concerts, le plus robuste est ce que fait maintenant le script :
+## 2. Construction de l'index FAISS
 
-- ne pas filtrer uniquement sur un type a l'entree ;
-- exclure ensuite localement tous les evenements dont les `keywords` contiennent `concert`.
+Le script [scripts/build_faiss_index.py](/home/zmxw1768/Documents/rag_oc/scripts/build_faiss_index.py:1) :
 
-## Format de sortie
+1. lit le `JSONL` OpenAgenda ;
+2. reutilise les `chunks` existants s'ils sont presents ;
+3. sinon decoupe `document` en chunks ;
+4. calcule un embedding Mistral pour chaque chunk ;
+5. construit un index FAISS ;
+6. ecrit les metadonnees associees.
 
-Chaque ligne du fichier JSONL ressemble à ceci :
+Commande standard :
+
+```bash
+uv run python scripts/build_faiss_index.py \
+  --input data/openagenda/full.jsonl.gz \
+  --index-output data/faiss/openagenda.index \
+  --metadata-output data/faiss/openagenda_metadata.pkl
+```
+
+Exemple plus prudent si les embeddings sont longs ou limites :
+
+```bash
+uv run python scripts/build_faiss_index.py \
+  --input data/openagenda/full.jsonl.gz \
+  --batch-size 16 \
+  --request-pause-seconds 1 \
+  --max-retries 8 \
+  --retry-base-seconds 3
+```
+
+### Fichiers produits
+
+- `data/faiss/openagenda.index` : index vectoriel FAISS ;
+- `data/faiss/openagenda_metadata.pkl` : metadonnees alignees sur chaque vecteur.
+
+### Ce que contient la metadata d'un chunk
+
+Chaque embedding est associe a des infos comme :
+
+- `id`
+- `event_uid`
+- `title`
+- `date_summary`
+- `first_timing`
+- `last_timing`
+- `location`
+- `source_agendas`
+- `document`
+- `chunk_id`
+- `chunk_index`
+- `chunk_text`
+
+### Type d'index
+
+Par defaut :
+
+- les vecteurs sont normalises ;
+- l'index utilise `IndexFlatIP`.
+
+Tu peux aussi demander `ivfflat` avec :
+
+```bash
+--index-type ivfflat
+```
+
+## 3. Moteur RAG
+
+La logique metier est dans [rag_service.py](/home/zmxw1768/Documents/rag_oc/src/rag_oc/rag_service.py:1).
+
+Le flux de `RagService.ask(...)` est :
+
+1. la question utilisateur est transformee en embedding avec `mistral-embed` ;
+2. ce vecteur est compare aux vecteurs stockes dans FAISS ;
+3. les `top_k` chunks les plus proches sont recuperes ;
+4. les evenements deja termines sont filtres par defaut via `last_timing` ;
+5. un contexte texte est reconstruit a partir des chunks retenus ;
+6. ce contexte et la question sont envoyes au modele de chat Mistral ;
+7. la reponse finale est generee.
+
+Important :
+
+- FAISS fait la recherche semantique ;
+- Mistral embeddings produit les vecteurs ;
+- Mistral chat redige la reponse finale.
+
+Le prompt est template avec `langchain-core` quand la dependance est disponible.
+Dans l'etat actuel du projet, LangChain n'orchestre pas tout le RAG ; il sert surtout au templating du prompt.
+
+## 4. Test en CLI
+
+Le script [scripts/chat_openagenda.py](/home/zmxw1768/Documents/rag_oc/scripts/chat_openagenda.py:1) est un wrapper terminal autour de `RagService`.
+
+One-shot :
+
+```bash
+uv run python scripts/chat_openagenda.py \
+  --index-path data/faiss/openagenda.index \
+  --metadata-path data/faiss/openagenda_metadata.pkl \
+  --question "Je cherche un atelier a Paris ce week-end"
+```
+
+Mode interactif :
+
+```bash
+uv run python scripts/chat_openagenda.py \
+  --index-path data/faiss/openagenda.index \
+  --metadata-path data/faiss/openagenda_metadata.pkl
+```
+
+Options utiles :
+
+- `--top-k`
+- `--max-context-items`
+- `--chat-model`
+- `--temperature`
+
+Si tu modifies la structure des metadonnees ou les regles temporelles, il faut reconstruire l'index et `openagenda_metadata.pkl`.
+
+## 5. API REST FastAPI
+
+L'API dans [api.py](/home/zmxw1768/Documents/rag_oc/src/rag_oc/api.py:1) reutilise le meme moteur RAG que la CLI.
+
+Lancement :
+
+```bash
+uv run uvicorn rag_oc.api:app --reload
+```
+
+Documentation Swagger :
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+L'interface Swagger propose maintenant un selecteur `Examples` avec plusieurs scenarios de test preconfigures sur `POST /ask` et `POST /rebuild`.
+
+Endpoints exposes :
+
+- `GET /health`
+- `POST /ask`
+- `POST /rebuild`
+
+### Scenarios `POST /ask`
 
 ```json
 {
-  "id": "openagenda:987",
-  "event_uid": 987,
-  "title": "Concert de jazz",
-  "description": "Soirée musicale",
-  "long_description": "Un trio en live.",
-  "event_types": ["concert", "jazz"],
-  "date_summary": "2026-07-03T18:00:00.000Z -> 2026-07-03T20:00:00.000Z",
-  "occurrences_count": 1,
-  "timings": [
-    {
-      "begin": "2026-07-03T18:00:00.000Z",
-      "end": "2026-07-03T20:00:00.000Z"
-    }
-  ],
-  "location": {
-    "name": "Salle des fêtes",
-    "city": "Paris",
-    "department": "Paris",
-    "region": "Île-de-France"
-  },
-  "source_agendas": [
-    {
-      "uid": 123,
-      "title": "Agenda Culture",
-      "slug": "agenda-culture"
-    }
-  ],
-  "document": "Titre: Concert de jazz\nRésumé: Soirée musicale\nDescription: Un trio en live.\nTypes: concert, jazz\nDates: 2026-07-03T18:00:00.000Z -> 2026-07-03T20:00:00.000Z\nLieu: Salle des fêtes, Paris, Paris, Île-de-France"
+  "question": "Je cherche une sortie culturelle a Paris ce week-end",
+  "top_k": 5,
+  "max_context_items": 4,
+  "temperature": 0.2
 }
 ```
 
-Pour reduire encore la taille disque, tu peux sortir directement en gzip :
+Scenarios disponibles dans Swagger :
 
-```bash
-uv run python scripts/fetch_openagenda_events.py \
-  --output data/openagenda/test.jsonl.gz
+- `atelier_paris_weekend`
+- `sortie_famille`
+- `expo_gratuite`
+
+La reponse contient :
+
+- `answer`
+- `sources`
+- `context`
+
+### Scenarios `POST /rebuild`
+
+```json
+{
+  "input_path": "data/openagenda/full.jsonl.gz",
+  "index_output": "data/faiss/openagenda.index",
+  "metadata_output": "data/faiss/openagenda_metadata.pkl",
+  "index_type": "flat"
+}
 ```
 
-Le script génère aussi un manifeste `*.manifest.json` avec :
+Scenarios disponibles dans Swagger :
 
-- la date de génération ;
-- la fenêtre de dates utilisée ;
-- les filtres appliqués ;
-- le nombre d'agendas parcourus ;
-- le nombre d'événements écrits.
+- `rebuild_standard`
+- `rebuild_ivf`
 
-## Conversion vers FAISS avec Mistral
+Le endpoint relance la construction de l'index puis recharge le service en memoire si besoin.
 
-Installe d'abord les dependances necessaires :
+## 6. Docker
 
-```bash
-uv sync
-```
+Le depot peut etre execute localement dans un conteneur Docker.
 
-Puis construis l'index :
+Build :
 
 ```bash
-uv run python scripts/build_faiss_index.py \
-  --input data/openagenda/ile_de_france_events.jsonl \
-  --index-output data/faiss/openagenda.index \
-  --metadata-output data/faiss/openagenda_metadata.pkl
+docker build -t rag-oc-api .
 ```
 
-Le script lit la cle Mistral via `MISTRAL_API_KEY` ou `--api-key`.
+L'image recupere les binaires `uv` et `uvx` via `COPY --from`, copie `pyproject.toml` et `uv.lock`, puis execute `uv sync --frozen --no-dev`.
 
-Exemple avec fichier compresse :
+Run :
 
 ```bash
-uv run python scripts/build_faiss_index.py \
-  --input data/openagenda/test.jsonl.gz \
-  --index-output data/faiss/openagenda.index \
-  --metadata-output data/faiss/openagenda_metadata.pkl
+docker run --rm -p 8000:8000 \
+  -e MISTRAL_API_KEY="$MISTRAL_API_KEY" \
+  rag-oc-api
 ```
 
-Le resultat :
+Avec Docker Compose :
 
-- `data/faiss/openagenda.index` contient les vecteurs ;
-- `data/faiss/openagenda_metadata.pkl` contient les metadonnees a renvoyer avec les resultats.
+```bash
+docker compose up --build
+```
 
-Le script suit le flux recommande par la documentation Mistral pour un RAG "from scratch" :
+Le `docker-compose.yml` monte `./data` dans le conteneur pour reutiliser les fichiers d'index et de donnees deja produits.
 
-- embeddings via `client.embeddings.create(...)`
-- modele `mistral-embed`
-- stockage des vecteurs dans FAISS
+Sans index present dans `data/faiss/`, l'API demarrera mais `/ask` ne pourra pas charger le moteur RAG.
 
-Dans le RAG, le flux devient :
+Test HTTP rapide apres lancement :
 
-1. collecter les evenements avec `fetch_openagenda_events.py` ;
-2. transformer le champ `document` en embeddings Mistral ;
-3. indexer dans FAISS ;
-4. au moment d'une question, embedder la question ;
-5. chercher les voisins les plus proches dans FAISS ;
-6. reconstruire le contexte avec les metadonnees.
+```bash
+curl -X POST "http://127.0.0.1:8000/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Je cherche un atelier a Paris ce week-end","top_k":5,"max_context_items":4,"temperature":0.2}'
+```
 
-Sources officielles Mistral :
+## 7. Demo et soutenance
 
-- Embeddings : https://docs.mistral.ai/studio-api/knowledge-rag/embeddings/
-- RAG quickstart : https://docs.mistral.ai/studio-api/knowledge-rag/rag_quickstart
+Pour une demo fluide :
 
-## Tests
+1. verifier que `data/faiss/openagenda.index` et `data/faiss/openagenda_metadata.pkl` existent
+2. lancer l'API via Docker ou `uvicorn`
+3. ouvrir `http://127.0.0.1:8000/docs`
+4. tester 2 ou 3 scenarios d'usage realistes via le selecteur `Examples` de Swagger
 
-Les tests couvrent pour l’instant :
+Scenarios conseilles :
 
-- le bornage de la fenêtre de dates à 365 jours ;
-- la normalisation d’un événement vers un enregistrement orienté RAG.
+- `Je cherche un atelier a Paris ce week-end`
+- `Je veux une exposition gratuite en Ile-de-France`
+- `Quels evenements famille sont proposes prochainement ?`
 
-Lancer les tests :
+Un plan de presentation en 15 slides est disponible dans [PRESENTATION.md](/home/zmxw1768/Documents/rag_oc/docs/PRESENTATION.md:1).
+
+## 8. Evaluation
+
+Le script [scripts/evaluate_rag.py](/home/zmxw1768/Documents/rag_oc/scripts/evaluate_rag.py:1) sert de base pour une evaluation automatique avec `ragas` et `datasets`.
+
+Le fichier d'entree doit contenir un JSONL annote avec, pour chaque ligne :
+
+- `question`
+- `answer`
+- `ground_truth`
+- `contexts`
+
+Un jeu de test annote d'exemple est fourni dans [tests/rag_eval_sample.jsonl](/home/zmxw1768/Documents/rag_oc/tests/rag_eval_sample.jsonl:1).
+
+Exemple :
+
+```bash
+uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl
+```
+
+## 9. Tests
+
+Tests unitaires :
 
 ```bash
 uv run python -m unittest discover -s tests
 ```
+
+Test fonctionnel HTTP :
+
+```bash
+uv run python scripts/api_smoke_test.py
+```
+
+Les tests couvrent :
+
+- la fenetre temporelle de collecte ;
+- la normalisation OpenAgenda ;
+- le chunking ;
+- la construction de l'index FAISS ;
+- le formatage du contexte ;
+- le filtrage des evenements passes ;
+- le contrat HTTP de l'API.
+- la presence des scenarios OpenAPI exposes dans Swagger.
+- la validation du format du jeu de test annote pour l'evaluation.
+
+## Sources
+
+- OpenAgenda Authentification : https://developers.openagenda.com/authentification/
+- OpenAgenda Lecture evenements : https://developers.openagenda.com/evenements/lecture/
+- OpenAgenda Recherche agendas : https://developers.openagenda.com/agendas/recherche/
+- Mistral Embeddings : https://docs.mistral.ai/studio-api/knowledge-rag/embeddings/
+- Mistral RAG quickstart : https://docs.mistral.ai/studio-api/knowledge-rag/rag_quickstart
