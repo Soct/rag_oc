@@ -1,12 +1,26 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "rag-oc"
 version = "0.1.0"
-description = "Collecte et préparation d'événements OpenAgenda pour un futur pipeline RAG."
+description = "Pipeline RAG local autour d'OpenAgenda, FAISS, Mistral et FastAPI."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "faiss-cpu>=1.14.3",
+    "fastapi>=0.116.0",
+    "httpx>=0.28.1",
+    "langchain-core>=0.3.68",
     "mistralai>=1.9.11",
     "numpy>=2.5.0",
     "tqdm>=4.67.1",
+    "uvicorn>=0.35.0",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
