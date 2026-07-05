@@ -1,11 +1,29 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
 
-# Virtual environments
-.venv
+# Virtual environments and local config
+.venv/
 .env
+.env.*
+
+# OS / editors
+.DS_Store
+
+# Local generated data
+data/openagenda/*.jsonl
+data/openagenda/*.jsonl.gz
+data/openagenda/*.manifest.json
+data/faiss/*.index
+data/faiss/*.pkl
