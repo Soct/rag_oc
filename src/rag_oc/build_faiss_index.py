@@ -1,3 +1,12 @@
+"""Construction de l'index FAISS a partir du JSONL OpenAgenda.
+
+Pipeline : JSONL(.gz) -> chunking du champ ``document`` -> embeddings Mistral
+-> normalisation L2 -> IndexFlatIP (similarite cosinus) + metadonnees pickle.
+
+Le fichier d'entree par defaut est ``full.jsonl.gz`` (produit par
+``scripts/fetch_openagenda_events.py``).  L'ancien chemin
+``ile_de_france_events.jsonl`` a ete corrige car ce fichier n'existe plus.
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Chemin corrige : le vrai dump est full.jsonl.gz (pas ile_de_france_events.jsonl).
 DEFAULT_INPUT_PATH = Path("data/openagenda/full.jsonl.gz")
 DEFAULT_INDEX_PATH = Path("data/faiss/openagenda.index")
 DEFAULT_METADATA_PATH = Path("data/faiss/openagenda_metadata.pkl")
@@ -18,6 +28,8 @@ DEFAULT_BATCH_SIZE = 32
 DEFAULT_MAX_RETRIES = 6
 DEFAULT_RETRY_BASE_SECONDS = 2.0
 DEFAULT_REQUEST_PAUSE_SECONDS = 0.25
+# Taille cible d'un chunk en caracteres.  Un chevauchement (overlap) est
+# applique entre chunks consecutifs pour ne pas couper le sens en plein milieu.
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 120
 ENV_FILE_PATH = Path(".env")
@@ -213,6 +225,14 @@ def build_chunk_records(
     chunk_size: int,
     chunk_overlap: int,
 ) -> list[ChunkRecord]:
+    """Transforme les records JSONL en chunks indexables.
+
+    Si un record contient deja un champ ``chunks``, on les reutilise tels
+    quels.  Sinon on decoupe le champ ``text_field`` avec ``split_text``.
+    Chaque chunk embarque les metadonnees de l'evenement (titre, dates,
+    lieu…) qui seront stockees a cote de l'index FAISS pour pouvoir
+    reconstruire le contexte RAG.
+    """
     chunk_records: list[ChunkRecord] = []
 
     for record in records:
@@ -344,6 +364,12 @@ def fetch_embeddings(
 
 
 def build_faiss_index(vectors, index_type: str, ivf_nlist: int):
+    """Construit l'index FAISS a partir des vecteurs d'embeddings.
+
+    Les vecteurs sont normalises L2 puis inseres dans un IndexFlatIP
+    (produit scalaire = similarite cosinus apres normalisation).
+    Une variante IVFFlat est disponible pour de plus gros volumes.
+    """
     import faiss
     import numpy as np
 
@@ -368,6 +394,12 @@ def build_faiss_index(vectors, index_type: str, ivf_nlist: int):
 
 
 def rebuild_index(config: IndexBuildConfig) -> dict:
+    """Pipeline complet : lecture JSONL -> chunking -> embeddings -> index FAISS.
+
+    Retourne un dict resume avec les chemins et stats de construction.
+    Appele par le CLI (``scripts/build_faiss_index.py``) et par l'endpoint
+    ``POST /rebuild`` de l'API.
+    """
     from mistralai.client import Mistral
 
     if not config.api_key:

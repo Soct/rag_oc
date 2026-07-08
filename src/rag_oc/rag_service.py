@@ -1,3 +1,13 @@
+"""Moteur RAG OpenAgenda.
+
+Pipeline : question -> embedding Mistral -> recherche FAISS -> filtrage temporel
+-> construction du contexte -> generation de la reponse via Mistral chat.
+
+Le filtrage temporel est indispensable car l'index contient a la fois des
+evenements passes et futurs (~89 % passes dans le dataset actuel). Sans un pool
+de recherche suffisamment large, la quasi-totalite des resultats FAISS etait
+filtree, ne laissant que des resultats peu pertinents.
+"""
 from __future__ import annotations
 
 import os
@@ -58,6 +68,12 @@ def load_index(index_path: Path):
 
 
 def load_metadata(metadata_path: Path) -> list[dict]:
+    """Charge les metadonnees pickle alignees sur l'index FAISS.
+
+    Chaque element est un dict contenant les champs de l'evenement
+    (title, date_summary, location, chunk_text, etc.).
+    L'ordre correspond exactement aux vecteurs de l'index FAISS.
+    """
     if not metadata_path.exists():
         raise FileNotFoundError(f"Metadonnees introuvables: {metadata_path}")
     with metadata_path.open("rb") as handle:
@@ -94,6 +110,12 @@ def extract_query_vector(client, model: str, question: str):
 
 
 def prepare_query_vector(index, vector):
+    """Normalise le vecteur requete si l'index utilise le produit scalaire (IP).
+
+    L'index est construit avec des vecteurs normalises L2 + IndexFlatIP,
+    ce qui revient a une similarite cosinus. Le vecteur requete doit
+    donc etre normalise de la meme facon.
+    """
     import faiss
     import numpy as np
 
@@ -122,6 +144,13 @@ def filter_matches_by_date(
     include_past_events: bool,
     now: datetime | None = None,
 ) -> list[dict]:
+    """Filtre les evenements deja termines.
+
+    Utilise ``last_timing`` (derniere seance connue) pour determiner si
+    l'evenement est passe.  Les evenements sans date sont conserves par
+    precaution.  Ce filtre est applique *apres* la recherche FAISS pour
+    ne garder que les evenements encore a venir.
+    """
     if include_past_events:
         return matches
 
@@ -129,6 +158,8 @@ def filter_matches_by_date(
     filtered: list[dict] = []
     for item in matches:
         last_timing = parse_event_datetime(item.get("last_timing"))
+        # On garde l'evenement s'il n'a pas de date (prudence) ou s'il
+        # n'est pas encore termine.
         if last_timing is None or last_timing >= reference_now:
             filtered.append(item)
     return filtered
@@ -243,6 +274,16 @@ class RagAnswer:
 
 
 class RagService:
+    """Service principal du pipeline RAG.
+
+    Flux de ``ask()`` :
+    1. Embedding de la question (Mistral ``mistral-embed``)
+    2. Recherche des voisins les plus proches dans FAISS (pool elargi)
+    3. Filtrage temporel : suppression des evenements passes
+    4. Construction du contexte texte a partir des chunks retenus
+    5. Generation de la reponse finale (Mistral chat)
+    """
+
     def __init__(
         self,
         *,
