@@ -227,11 +227,20 @@ Le flux de `RagService.ask(...)` est :
 
 1. la question utilisateur est transformee en embedding avec `mistral-embed` ;
 2. ce vecteur est compare aux vecteurs stockes dans FAISS ;
-3. les `top_k` chunks les plus proches sont recuperes ;
+3. un **pool elargi** de candidats est recupere (x20 le `top_k`, minimum 100) ;
 4. les evenements deja termines sont filtres par defaut via `last_timing` ;
-5. un contexte texte est reconstruit a partir des chunks retenus ;
-6. ce contexte et la question sont envoyes au modele de chat Mistral ;
-7. la reponse finale est generee.
+5. les `top_k` meilleurs parmi les evenements restants sont conserves ;
+6. un contexte texte est reconstruit a partir des chunks retenus ;
+7. ce contexte et la question sont envoyes au modele de chat Mistral ;
+8. la reponse finale est generee.
+
+### Pourquoi un pool de recherche elargi ?
+
+Le dataset contient ~89 % d'evenements passes. Avec un pool trop petit
+(l'ancien x4), la quasi-totalite des resultats FAISS etait filtree par date,
+ne laissant que des correspondances tres faibles. Le pool elargi (x20, min 100)
+garantit qu'assez d'evenements futurs subsistent apres le filtrage temporel
+pour fournir des recommandations pertinentes.
 
 Important :
 
@@ -392,32 +401,56 @@ Scenarios conseilles :
 
 Un plan de presentation en 15 slides est disponible dans [PRESENTATION.md](/home/zmxw1768/Documents/rag_oc/docs/PRESENTATION.md:1).
 
-## 8. Evaluation
+## 8. Evaluation avec RAGAS
 
-Le script [scripts/evaluate_rag.py](/home/zmxw1768/Documents/rag_oc/scripts/evaluate_rag.py:1) sert de base pour une evaluation automatique avec `ragas` et `datasets`.
+Le script [scripts/evaluate_rag.py](/home/zmxw1768/Documents/rag_oc/scripts/evaluate_rag.py:1) mesure la qualite du RAG avec [RAGAS](https://docs.ragas.io/) sur trois metriques :
 
-Le fichier d'entree doit contenir un JSONL annote avec, pour chaque ligne :
+- **answer_relevancy** : la reponse est-elle pertinente par rapport a la question ?
+- **faithfulness** : la reponse est-elle fidele au contexte fourni (pas d'hallucination) ?
+- **context_precision** : les chunks recuperes sont-ils pertinents par rapport a la reference ?
 
-- `question`
-- `answer`
-- `ground_truth`
-- `contexts`
+### Installation des dependances d'evaluation
+
+```bash
+uv sync --extra eval
+```
+
+### Mode static (donnees pre-calculees)
+
+Lit un JSONL avec `question`, `answer`, `ground_truth` et `contexts` :
+
+```bash
+uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static
+```
+
+### Mode live (interrogation du RAG reel)
+
+Lit un JSONL avec `question` et `ground_truth`, puis interroge le RAG (FAISS + Mistral) pour obtenir la reponse et les contextes :
+
+```bash
+uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode live
+```
+
+Ce mode necessite une cle Mistral valide (via `.env` ou `MISTRAL_API_KEY`).
+
+### Sauvegarder les scores
+
+```bash
+uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static --output scores.json
+```
 
 Un jeu de test annote d'exemple est fourni dans [tests/rag_eval_sample.jsonl](/home/zmxw1768/Documents/rag_oc/tests/rag_eval_sample.jsonl:1).
 
-Exemple :
-
-```bash
-uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl
-```
-
 ## 9. Tests
 
-Tests unitaires :
+Tests unitaires avec couverture de code :
 
 ```bash
-uv run python -m unittest discover -s tests
+uv run pytest
 ```
+
+La couverture est configuree dans `pyproject.toml` et s'affiche automatiquement.
+Un rapport HTML est genere dans `htmlcov/`.
 
 Test fonctionnel HTTP :
 
@@ -429,13 +462,16 @@ Les tests couvrent :
 
 - la fenetre temporelle de collecte ;
 - la normalisation OpenAgenda ;
-- le chunking ;
-- la construction de l'index FAISS ;
-- le formatage du contexte ;
+- le chunking et le chargement JSONL/GZ ;
+- la construction de l'index FAISS (Flat et IVFFlat) ;
+- le formatage du contexte et des lieux ;
 - le filtrage des evenements passes ;
-- le contrat HTTP de l'API.
-- la presence des scenarios OpenAPI exposes dans Swagger.
-- la validation du format du jeu de test annote pour l'evaluation.
+- la lecture de la cle API depuis `.env` ;
+- la normalisation des dates ISO 8601 ;
+- la generation de reponse (mock du client Mistral) ;
+- le contrat HTTP de l'API ;
+- la presence des scenarios OpenAPI exposes dans Swagger ;
+- la validation du format du jeu de test annote pour l'evaluation (modes static et live).
 
 ## Sources
 
