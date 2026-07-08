@@ -2,9 +2,12 @@ services:
   rag-api:
     build: .
     container_name: rag-oc-api
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     environment:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
     volumes:
+      - ./src:/app/src
       - ./data:/app/data
