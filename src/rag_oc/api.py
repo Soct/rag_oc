@@ -1,3 +1,14 @@
+"""API REST FastAPI pour le systeme RAG OpenAgenda.
+
+Endpoints :
+- GET  /health  : healthcheck
+- POST /ask     : poser une question au moteur RAG
+- POST /rebuild : reconstruire l'index FAISS a la demande
+
+Le service RAG est initialise paresseusement (lazy) au premier appel
+a ``/ask`` et reutilise ensuite.  Apres un ``/rebuild``, l'index en
+memoire est recharge automatiquement.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -144,6 +155,12 @@ app.state.api_state = ApiState()
 
 
 def get_service() -> RagService:
+    """Initialisation paresseuse du service RAG.
+
+    Le service est cree au premier appel puis mis en cache dans
+    ``app.state``.  Cela evite de charger l'index FAISS au demarrage
+    si aucune requete n'est faite.
+    """
     state: ApiState = app.state.api_state
     if state.service is None:
         api_key = resolve_api_key()
