@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_INPUT_PATH = Path("data/openagenda/ile_de_france_events.jsonl")
+DEFAULT_INPUT_PATH = Path("data/openagenda/full.jsonl.gz")
 DEFAULT_INDEX_PATH = Path("data/faiss/openagenda.index")
 DEFAULT_METADATA_PATH = Path("data/faiss/openagenda_metadata.pkl")
 DEFAULT_MODEL = "mistral-embed"

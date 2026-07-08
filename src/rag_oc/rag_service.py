@@ -317,11 +317,18 @@ class RagService:
             question=clean_question,
         )
         prepared_query = prepare_query_vector(index=self.index, vector=query_vector)
+        effective_top_k = top_k or self.top_k
+        # FIX: ~89% des chunks indexés correspondent à des événements passés.
+        # L'ancien multiplicateur (x4) ne renvoyait que ~20 candidats, dont la
+        # quasi-totalité était filtrée par filter_matches_by_date, laissant très
+        # peu de résultats pertinents.  On élargit le pool de recherche (x20,
+        # min 100) pour conserver suffisamment de résultats futurs après filtrage.
+        search_pool = min(max(effective_top_k * 20, 100), len(self.metadata))
         raw_matches = search_index(
             index=self.index,
             metadata=self.metadata,
             query_vector=prepared_query,
-            top_k=max((top_k or self.top_k) * 4, top_k or self.top_k),
+            top_k=search_pool,
         )
         matches = filter_matches_by_date(
             raw_matches,
