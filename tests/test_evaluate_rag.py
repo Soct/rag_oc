@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 from pathlib import Path
 import sys
 import tempfile
@@ -114,6 +115,10 @@ class EvaluateRagTests(unittest.TestCase):
         self.assertEqual(args.timeout, 600)
         self.assertEqual(args.max_retries, 5)
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("langchain_mistralai") and importlib.util.find_spec("ragas"),
+        "dependances d'evaluation optionnelles non installees",
+    )
     def test_build_ragas_dependencies_uses_sequential_llm_wrapper(self) -> None:
         class FakeChatMistralAI:
             def __init__(self, **kwargs) -> None:
