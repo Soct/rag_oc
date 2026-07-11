@@ -403,7 +403,7 @@ Un plan de presentation en 15 slides est disponible dans [PRESENTATION.md](/home
 
 ## 8. Evaluation avec RAGAS
 
-Le script [scripts/evaluate_rag.py](/home/zmxw1768/Documents/rag_oc/scripts/evaluate_rag.py:1) mesure la qualite du RAG avec [RAGAS](https://docs.ragas.io/) sur trois metriques :
+Le script [scripts/evaluate_rag.py](/home/zmxw1768/Documents/rag_oc/scripts/evaluate_rag.py:1) mesure la qualite du RAG avec [RAGAS](https://docs.ragas.io/) sur trois metriques. Il utilise les modeles Mistral deja employes par le pipeline (`mistral-small-latest` et `mistral-embed`) : une cle `MISTRAL_API_KEY` est donc requise dans les deux modes.
 
 - **answer_relevancy** : la reponse est-elle pertinente par rapport a la question ?
 - **faithfulness** : la reponse est-elle fidele au contexte fourni (pas d'hallucination) ?
@@ -420,8 +420,15 @@ uv sync --extra eval
 Lit un JSONL avec `question`, `answer`, `ground_truth` et `contexts` :
 
 ```bash
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
 uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static
 ```
+
+Par defaut, l'evaluation lance une seule metrique a la fois et espace les appels
+Mistral de cinq secondes pour respecter les limites d'API. En cas de `429`, elle
+effectue jusqu'a cinq nouvelles tentatives et laisse jusqu'a dix minutes a chaque
+metrique. Vous pouvez ajuster ce rythme, par exemple `--requests-per-second 0.5`
+(une requete toutes les deux secondes), si votre quota le permet.
 
 ### Mode live (interrogation du RAG reel)
 
@@ -436,10 +443,23 @@ Ce mode necessite une cle Mistral valide (via `.env` ou `MISTRAL_API_KEY`).
 ### Sauvegarder les scores
 
 ```bash
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
 uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static --output scores.json
 ```
 
 Un jeu de test annote d'exemple est fourni dans [tests/rag_eval_sample.jsonl](/home/zmxw1768/Documents/rag_oc/tests/rag_eval_sample.jsonl:1).
+
+### Resultats observes
+
+Sur le jeu de test static de 10 cas, la campagne mesuree produit les scores suivants :
+
+| Metrique | Score | Interpretation |
+|---|---:|---|
+| `context_precision` | 1,0000 | Les contextes recuperes sont pertinents pour les references de ce jeu de test. |
+| `answer_relevancy` | 0,8536 | Les reponses sont globalement adaptees aux questions. |
+| `faithfulness` | 0,7000 | La fidelite au contexte est le principal axe d'amelioration : certaines reponses extrapolent au-dela des chunks. |
+
+Ces mesures sont indicatives : le jeu de test est volontairement petit et annote. Elles doivent etre rejouees apres toute evolution de l'index, du prompt ou du modele.
 
 ## 9. Tests
 

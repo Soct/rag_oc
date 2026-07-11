@@ -151,25 +151,35 @@ Deux modes sont disponibles :
 
 Le mode live permet de mesurer la qualite de bout en bout (embedding -> FAISS -> filtrage temporel -> generation).
 
+La campagne static executee sur les 10 cas de `tests/rag_eval_sample.jsonl` donne les resultats suivants :
+
+| Metrique | Score | Lecture |
+|---|---:|---|
+| `context_precision` | 1,0000 | Les contextes renvoyes par la recherche sont pertinents pour ce jeu de reference. |
+| `answer_relevancy` | 0,8536 | Les reponses sont globalement pertinentes par rapport aux questions. |
+| `faithfulness` | 0,7000 | Les reponses restent parfois insuffisamment ancrees dans les chunks recuperes ; c'est le principal axe d'amelioration. |
+
+La precision de contexte valide la qualite de la recuperation sur cet echantillon. Les travaux prioritaires portent donc sur le prompt de generation et la contrainte de ne repondre qu'a partir du contexte. Ces scores restent indicatifs en raison de la taille limitee du dataset et devront etre rejoues apres chaque evolution du corpus, de l'index ou du modele.
+
 ## Indicateurs lisibles
 
 - Couverture de code : 71 % (81 % sur le moteur RAG principal).
-- 72 tests unitaires et d'integration passent.
+- 75 tests unitaires et d'integration passent.
 - Contrat API verifie par smoke test : `GET /health` et `POST /ask` repondent correctement en local.
 - Similarite exploitable : chaque source retournee par le moteur RAG expose un `score` numerique, visible dans le contexte et dans la reponse API.
 - Jeu de test annote present : `tests/rag_eval_sample.jsonl` (10 cas de test).
-- Evaluation RAGAS fonctionnelle en mode static et live.
+- Evaluation RAGAS fonctionnelle en mode static et live ; la campagne static de reference obtient 1,0000 en precision de contexte, 0,8536 en pertinence et 0,7000 en fidelite.
 
 ## Resultats observables localement
 
-- `uv run pytest` : `72 tests`, statut `OK`, couverture 71 %.
+- `uv run pytest` : `75 tests`, statut `OK`, couverture 71 %.
 - `uv run python scripts/api_smoke_test.py` : verification locale du contrat HTTP sur `/health` et `/ask`.
-- `uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static` : evaluation RAGAS sur donnees pre-calculees.
+- `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static` : evaluation RAGAS sur donnees pre-calculees. Les appels Mistral sont limites par defaut a une requete toutes les cinq secondes et a une metrique simultanee pour eviter les erreurs de quota (`429`).
 - `uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode live` : evaluation RAGAS de bout en bout avec le RAG reel.
 
 ## Limites actuelles
 
-- L'evaluation quantitative complete avec `ragas` n'est pas active par defaut dans l'environnement courant.
+- L'evaluation RAGAS effectue des appels Mistral et prend plusieurs minutes sur le jeu de test ; elle n'est donc pas lancee dans la suite de tests par defaut.
 - Le projet n'utilise pas encore une chaine LangChain complete avec vector store abstrait ; le choix ici privilegie la clarte et le controle direct sur FAISS.
 - L'API depend de Mistral pour la vectorisation et la generation, donc la disponibilite externe influence les temps de reponse et les rebuilds.
 - La qualite finale depend fortement de la qualite descriptive des evenements OpenAgenda.
