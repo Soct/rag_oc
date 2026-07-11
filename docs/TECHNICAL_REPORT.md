@@ -164,7 +164,7 @@ La precision de contexte valide la qualite de la recuperation sur cet echantillo
 ## Indicateurs lisibles
 
 - Couverture de code : 71 % (81 % sur le moteur RAG principal).
-- 75 tests unitaires et d'integration passent.
+- 76 tests unitaires et d'integration passent.
 - Contrat API verifie par smoke test : `GET /health` et `POST /ask` repondent correctement en local.
 - Similarite exploitable : chaque source retournee par le moteur RAG expose un `score` numerique, visible dans le contexte et dans la reponse API.
 - Jeu de test annote present : `tests/rag_eval_sample.jsonl` (10 cas de test).
@@ -172,7 +172,7 @@ La precision de contexte valide la qualite de la recuperation sur cet echantillo
 
 ## Resultats observables localement
 
-- `uv run pytest` : `75 tests`, statut `OK`, couverture 71 %.
+- `uv run pytest` : `76 tests`, statut `OK`, couverture 71 %.
 - `uv run python scripts/api_smoke_test.py` : verification locale du contrat HTTP sur `/health` et `/ask`.
 - `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode static` : evaluation RAGAS sur donnees pre-calculees. Les appels Mistral sont limites par defaut a une requete toutes les cinq secondes et a une metrique simultanee pour eviter les erreurs de quota (`429`).
 - `uv run python scripts/evaluate_rag.py --input tests/rag_eval_sample.jsonl --mode live` : evaluation RAGAS de bout en bout avec le RAG reel.
