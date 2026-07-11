@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -56,7 +57,40 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Fichier JSON optionnel pour sauvegarder les scores.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help="Nombre maximal de metriques evaluees en parallele (defaut : 1).",
+    )
+    parser.add_argument(
+        "--requests-per-second",
+        type=float,
+        default=0.2,
+        help="Debit maximal des appels Mistral pendant l'evaluation (defaut : 0.2).",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Delai maximal par metrique RAGAS en secondes (defaut : 600).",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=5,
+        help="Nombre maximal de nouvelles tentatives apres une erreur API (defaut : 5).",
+    )
+    args = parser.parse_args()
+    if args.max_workers < 1:
+        parser.error("--max-workers doit etre superieur ou egal a 1.")
+    if args.requests_per_second <= 0:
+        parser.error("--requests-per-second doit etre strictement positif.")
+    if args.timeout < 1:
+        parser.error("--timeout doit etre superieur ou egal a 1.")
+    if args.max_retries < 0:
+        parser.error("--max-retries doit etre superieur ou egal a 0.")
+    return args
 
 
 def load_rows(path: Path, *, required_fields: tuple[str, ...] = STATIC_REQUIRED_FIELDS) -> list[dict]:
@@ -129,26 +163,140 @@ def enrich_with_rag(rows: list[dict]) -> list[dict]:
     return enriched
 
 
-def run_evaluation(rows: list[dict], output_path: Path | None) -> None:
+def build_ragas_dependencies(*, requests_per_second: float):
+    """Configure RAGAS avec les modeles Mistral deja utilises par le projet.
+
+    RAGAS ne doit pas choisir son fournisseur par defaut (OpenAI). En plus de
+    demander une cle qui n'est pas celle du projet, ce comportement peut
+    instancier un adaptateur incompatible avec la version de LangChain.
+    """
+    from langchain_mistralai import ChatMistralAI, MistralAIEmbeddings
+    from langchain_core.rate_limiters import InMemoryRateLimiter
+    from langchain_core.outputs import LLMResult
+    from ragas.embeddings.base import LangchainEmbeddingsWrapper
+    from ragas.llms.base import LangchainLLMWrapper
+
+    from rag_oc.rag_service import DEFAULT_CHAT_MODEL, DEFAULT_EMBEDDING_MODEL, resolve_api_key
+
+    api_key = resolve_api_key()
+    if not api_key:
+        raise ValueError(
+            "Cle Mistral introuvable. RAGAS utilise les modeles Mistral du projet ; "
+            "definissez MISTRAL_API_KEY (ou ajoutez-la dans .env)."
+        )
+
+    class SequentialLangchainLLMWrapper(LangchainLLMWrapper):
+        """Evite le regroupement defectueux de sorties dans langchain-mistralai.
+
+        ``answer_relevancy`` demande plusieurs generations pour chaque ligne.
+        Avec les versions installees, ``ChatMistralAI.agenerate_prompt`` echoue
+        lorsqu'il tente de combiner plusieurs usages de tokens. Les appels sont
+        donc effectues un par un, sans modifier la metrique ni son strictness.
+        """
+
+        async def agenerate_text(
+            self,
+            prompt,
+            n: int = 1,
+            temperature: float | None = 0.01,
+            stop=None,
+            callbacks=None,
+        ):
+            if n == 1:
+                return await super().agenerate_text(
+                    prompt,
+                    n=1,
+                    temperature=temperature,
+                    stop=stop,
+                    callbacks=callbacks,
+                )
+
+            results = []
+            for _ in range(n):
+                results.append(
+                    await super().agenerate_text(
+                        prompt,
+                        n=1,
+                        temperature=temperature,
+                        stop=stop,
+                        callbacks=callbacks,
+                    )
+                )
+            return LLMResult(generations=[[result.generations[0][0] for result in results]])
+
+    llm = SequentialLangchainLLMWrapper(
+        ChatMistralAI(
+            api_key=api_key,
+            model=DEFAULT_CHAT_MODEL,
+            temperature=0,
+            rate_limiter=InMemoryRateLimiter(
+                requests_per_second=requests_per_second,
+                check_every_n_seconds=0.1,
+                max_bucket_size=1,
+            ),
+        )
+    )
+    embeddings = LangchainEmbeddingsWrapper(
+        MistralAIEmbeddings(api_key=api_key, model=DEFAULT_EMBEDDING_MODEL)
+    )
+    return llm, embeddings
+
+
+def mean_scores(scores: list[dict]) -> dict[str, float]:
+    """Calcule les moyennes RAGAS v0.3 sans dependre d'une API interne."""
+    if not scores:
+        raise ValueError("RAGAS n'a retourne aucun score.")
+
+    averages: dict[str, float] = {}
+    for metric_name in scores[0]:
+        values = [
+            float(row[metric_name])
+            for row in scores
+            if row.get(metric_name) is not None and not math.isnan(float(row[metric_name]))
+        ]
+        averages[metric_name] = sum(values) / len(values) if values else float("nan")
+    return averages
+
+
+def run_evaluation(
+    rows: list[dict],
+    output_path: Path | None,
+    *,
+    max_workers: int,
+    requests_per_second: float,
+    timeout: int,
+    max_retries: int,
+) -> None:
     """Lance l'evaluation RAGAS et affiche les scores."""
     from datasets import Dataset
     from ragas import evaluate
     from ragas.metrics import answer_relevancy, context_precision, faithfulness
+    from ragas.run_config import RunConfig
 
     dataset = Dataset.from_list(rows)
-    # RAGAS utilise un LLM pour evaluer.  Par defaut il utilise OpenAI ;
-    # on peut le surcharger avec langchain-mistralai si MISTRAL_API_KEY
-    # est disponible.  Si aucun LLM n'est configure, ragas leve une erreur
-    # explicite.
-    result = evaluate(dataset, metrics=[answer_relevancy, faithfulness, context_precision])
+    llm, embeddings = build_ragas_dependencies(requests_per_second=requests_per_second)
+    result = evaluate(
+        dataset,
+        metrics=[answer_relevancy, faithfulness, context_precision],
+        llm=llm,
+        embeddings=embeddings,
+        run_config=RunConfig(
+            max_workers=max_workers,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_wait=120,
+        ),
+        raise_exceptions=True,
+    )
+    scores = mean_scores(result.scores)
 
     print("\n--- Scores RAGAS ---")
-    for metric_name, score in result.items():
+    for metric_name, score in scores.items():
         print(f"  {metric_name}: {score:.4f}")
 
     if output_path is not None:
-        scores = {k: round(v, 4) for k, v in result.items()}
-        output_path.write_text(json.dumps(scores, indent=2, ensure_ascii=False), encoding="utf-8")
+        rounded_scores = {k: round(v, 4) for k, v in scores.items()}
+        output_path.write_text(json.dumps(rounded_scores, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"\nScores sauvegardes dans {output_path}")
 
 
@@ -177,7 +325,14 @@ def main() -> None:
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
 
-    run_evaluation(rows, args.output)
+    run_evaluation(
+        rows,
+        args.output,
+        max_workers=args.max_workers,
+        requests_per_second=args.requests_per_second,
+        timeout=args.timeout,
+        max_retries=args.max_retries,
+    )
 
 
 if __name__ == "__main__":
