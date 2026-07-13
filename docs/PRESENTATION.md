@@ -1,19 +1,21 @@
-# Proposition de presentation soutenance
+# Présentation de soutenance — POC Puls-Events
 
 ## Slide 1 - Titre
 
-- Systeme RAG OpenAgenda pour la recommandation d'evenements
-- POC local avec API FastAPI, FAISS et Mistral
+- Assistant intelligent de recommandation d'événements pour Puls-Events
+- POC local avec API FastAPI, FAISS, Mistral et LangChain
 
 ## Slide 2 - Contexte et probleme
 
-- Les evenements OpenAgenda sont nombreux et heterogenes
+- Puls-Events souhaite valider la faisabilité d'un chatbot de recommandation culturelle
+- Les événements OpenAgenda sont nombreux et hétérogènes
 - Une recherche par mots-cles est limitee
 - Besoin d'une recherche semantique et d'une reponse naturelle
 
 ## Slide 3 - Objectif du projet
 
-- Collecter les evenements utiles
+- Démontrer un parcours complet, de la collecte à la réponse API
+- Collecter les événements utiles
 - Construire un index vectoriel
 - Repondre a une question utilisateur via un endpoint API
 - Presenter une demo locale reproductible
@@ -50,56 +52,34 @@
 - Reconstruction du contexte
 - Generation de la reponse finale
 
-## Slide 8 - API et conteneurisation
+## Slide 8 - Choix techniques
 
-- FastAPI avec `/ask`, `/rebuild`, `/health`
-- Swagger via `/docs` avec scenarios de test preconfigures
-- Dockerfile base sur `uv` + `pyproject.toml`
-- Docker Compose pour la demo rapide
+- `IndexFlatIP` retenu : recherche exacte et sans paramétrage, adaptée à ~65 000 chunks
+- `IndexIVFFlat` : plus adapté à une volumétrie élevée, mais nécessite entraînement et réglage (`nlist`, `nprobe`), avec un recall non garanti
+- HNSW : très faible latence à grande échelle, mais plus de mémoire et davantage de paramètres à régler
+- Mistral `mistral-embed` pour les embeddings et `mistral-small-latest` pour la génération
+- LangChain pour le templating de prompt et FastAPI pour la documentation automatique
 
-## Slide 9 - Choix techniques
+## Slide 9 - Fraîcheur des données
 
-- FAISS pour la vitesse et la simplicite
-- Mistral `mistral-embed` pour les embeddings
-- FastAPI pour la documentation automatique
-- Separation nette entre logique metier et interface API
+- Le corpus contient environ 89 % d'événements terminés.
+- Le moteur cherche dans un pool élargi (×20, minimum 100) avant de retirer les événements passés.
+- La reconstruction régulière de l'index reste nécessaire pour améliorer la pertinence.
 
-## Slide 10 - Resultats observes
+## Slide 10 - API et démo locale
 
-- Recherche semantique fonctionnelle
-- Reponses naturelles produites a partir du contexte
-- Filtrage des evenements deja passes
-- Rebuild d'index a la demande
+- FastAPI : `/health`, `/ask`, `/rebuild` et Swagger `/docs`.
+- Dockerfile et Docker Compose permettent de démarrer l'API localement.
+- Trois scénarios réalistes sont déjà proposés dans Swagger.
 
-## Slide 11 - Evaluation
+## Slide 11 - Résultats et évaluation
 
-- Tests unitaires et API
-- Verification fonctionnelle locale
-- Pistes Ragas pour evaluation automatique
-- Observation qualitative sur les scenarios de demo exposes aussi dans Swagger
+- 76 tests passent ; couverture de code : 71 %.
+- Évaluation RAGAS static sur 10 cas annotés : context precision 1,00 ; answer relevancy 0,85 ; faithfulness 0,70.
+- La fidélité de la réponse est l'axe d'amélioration prioritaire.
 
-## Slide 12 - Scenarios de demo
+## Slide 12 - Conclusion et perspectives
 
-- "Je cherche un atelier a Paris ce week-end"
-- "Quels evenements famille sont proposes prochainement ?"
-- "Je veux une exposition gratuite en Ile-de-France"
-
-## Slide 13 - Limites
-
-- Dependance a l'API Mistral pour embeddings et generation
-- Temps de rebuild de l'index
-- Qualite variable selon les donnees source et le retrieval
-- Pas d'interface frontend metier dediee dans cette version finale
-
-## Slide 14 - Perspectives
-
-- Reranking des resultats
-- Evaluation automatique plus poussee avec Ragas
-- Filtres metier explicites par date / lieu / categorie
-- Deploiement cloud et protection de l'endpoint `/rebuild`
-
-## Slide 15 - Conclusion
-
-- POC RAG local operationnel
-- Recherche semantique + API demonstrable
-- Base propre pour extension produit ou industrialisation
+- POC fonctionnel : collecte, indexation, retrieval, génération, API et conteneurisation.
+- Priorités : renforcer l'ancrage des réponses, ajouter des filtres métier et un reranking.
+- Le POC constitue une base pour une expérimentation produit plus large.
