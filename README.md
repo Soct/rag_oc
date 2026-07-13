@@ -213,7 +213,11 @@ Par defaut :
 - les vecteurs sont normalises ;
 - l'index utilise `IndexFlatIP`.
 
-Tu peux aussi demander `ivfflat` avec :
+`IndexFlatIP` est retenu pour le volume actuel (~65 000 chunks) : la recherche est exacte, ne demande ni entrainement ni parametre de rappel, et reste rapide a cette echelle.
+
+L'alternative `IndexIVFFlat` peut etre utilisee pour une volumetrie plus elevee, mais elle demande un entrainement et le reglage de `nlist` et `nprobe` ; la recherche devient approchée. HNSW est une autre option pour une latence faible a grande echelle, au prix d'une consommation memoire et de reglages supplementaires.
+
+On peut demander `ivfflat` avec :
 
 ```bash
 --index-type ivfflat
@@ -279,7 +283,7 @@ Options utiles :
 - `--chat-model`
 - `--temperature`
 
-Si tu modifies la structure des metadonnees ou les regles temporelles, il faut reconstruire l'index et `openagenda_metadata.pkl`.
+Si on modifie la structure des metadonnees ou les regles temporelles, il faut reconstruire l'index et `openagenda_metadata.pkl`.
 
 ## 5. API REST FastAPI
 
@@ -399,7 +403,7 @@ Scenarios conseilles :
 - `Je veux une exposition gratuite en Ile-de-France`
 - `Quels evenements famille sont proposes prochainement ?`
 
-Un plan de presentation en 15 slides est disponible dans [PRESENTATION.md](/home/zmxw1768/Documents/rag_oc/docs/PRESENTATION.md:1).
+Le support de soutenance final compte 12 slides : [PRESENTATION.md](/home/zmxw1768/Documents/rag_oc/docs/PRESENTATION.md:1) et [RAG_OpenAgenda_presentation.pptx](/home/zmxw1768/Documents/rag_oc/docs/RAG_OpenAgenda_presentation.pptx).
 
 ## 8. Evaluation avec RAGAS
 
@@ -428,7 +432,7 @@ Par defaut, l'evaluation lance une seule metrique a la fois et espace les appels
 Mistral de cinq secondes pour respecter les limites d'API. En cas de `429`, elle
 effectue jusqu'a cinq nouvelles tentatives et laisse jusqu'a dix minutes a chaque
 metrique. Vous pouvez ajuster ce rythme, par exemple `--requests-per-second 0.5`
-(une requete toutes les deux secondes), si votre quota le permet.
+(une requete toutes les deux secondes), si le quota le permet.
 
 ### Mode live (interrogation du RAG reel)
 
